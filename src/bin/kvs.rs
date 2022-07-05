@@ -1,7 +1,7 @@
 use std::{env::current_dir, process::exit};
 
 use clap::{Parser, Subcommand};
-use kvs::KvStore;
+use kvs::{KvsError, KvStore};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -44,8 +44,12 @@ fn main() {
         },
         Some(Command::Rm { key }) => match kv_store.remove(key.to_string()) {
             Ok(_) => (),
-            _ => {
+            Err(KvsError::KeyNotFound) => {
                 println!("Key not found");
+                exit(1)
+            }
+            Err(e) => {
+                println!("{:?}", e);
                 exit(1);
             }
         },
