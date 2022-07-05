@@ -8,7 +8,9 @@ pub enum KvsError {
     #[error("serde error")]
     Serde(#[from] serde_json::Error),
     #[error("Key not found")]
-    KeyNotFound(),
+    KeyNotFound,
+    #[error("Unsupported operation")]
+    UnsupportedOperation,
 }
 
 pub type Result<T> = std::result::Result<T, KvsError>;

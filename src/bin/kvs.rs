@@ -1,4 +1,4 @@
-use std::{process::exit, env::current_dir};
+use std::{env::current_dir, process::exit};
 
 use clap::{Parser, Subcommand};
 use kvs::KvStore;
@@ -7,11 +7,11 @@ use kvs::KvStore;
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     #[clap(subcommand)]
-    command: Option<Commands>,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
-enum Commands {
+enum Command {
     Set {
         #[clap(value_parser)]
         key: String,
@@ -33,19 +33,21 @@ fn main() {
     let dir = current_dir().unwrap();
     let mut kv_store = KvStore::open(dir).unwrap();
     match &cli.command {
-        Some(Commands::Set { key, value }) => {
+        Some(Command::Set { key, value }) => {
             kv_store.set(key.to_string(), value.to_string()).unwrap();
         }
-        Some(Commands::Get { key }) => match kv_store.get(key.to_string()) {
+        Some(Command::Get { key }) => match kv_store.get(key.to_string()) {
             Ok(Some(v)) => println!("{}", v),
-            _ => {println!("Key not found")},
+            _ => {
+                println!("Key not found")
+            }
         },
-        Some(Commands::Rm { key }) => match kv_store.remove(key.to_string()) {
+        Some(Command::Rm { key }) => match kv_store.remove(key.to_string()) {
             Ok(_) => (),
             _ => {
                 println!("Key not found");
                 exit(1);
-            },
+            }
         },
         None => {
             unimplemented!();

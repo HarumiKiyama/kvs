@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Deserializer;
 
 use crate::{KvsError, Result};
 
@@ -11,13 +12,14 @@ use crate::{KvsError, Result};
 pub struct KvStore {
     path: PathBuf,
     index: HashMap<String, ValueLocation>,
-    writer: BufWriter<File>,
-    reader: BufReader<File>,
+    writer: BufWriterWithPos,
+    reader: BufReaderWithPos,
 }
 
 #[derive(Debug)]
 pub struct BufWriterWithPos {
     writer: BufWriter<File>,
+    pos: u64,
 }
 
 #[derive(Debug)]
@@ -29,29 +31,47 @@ struct ValueLocation {
 #[derive(Debug)]
 pub struct BufReaderWithPos {
     reader: BufReader<File>,
+    pos: u64,
 }
 
 impl BufReaderWithPos {
-    fn new() -> Result<Self> {
-        todo!()
+    fn new(mut inner: File) -> Result<Self> {
+        let pos = inner.seek(SeekFrom::Current(0))?;
+        Ok(Self {
+            reader: BufReader::new(inner),
+            pos,
+        })
     }
 }
 
 impl Read for BufReaderWithPos {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.reader.read(buf)
+        let len = self.reader.read(buf)?;
+        self.pos += len as u64;
+        Ok(len)
     }
 }
 
 impl Seek for BufReaderWithPos {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.reader.seek(pos)
+        self.pos = self.reader.seek(pos)?;
+        Ok(self.pos)
+    }
+}
+
+impl BufWriterWithPos {
+    fn new(mut inner: File) -> Result<Self> {
+        let pos = inner.seek(SeekFrom::Current(0))?;
+        let writer = BufWriter::new(inner);
+        Ok(Self { writer, pos })
     }
 }
 
 impl Write for BufWriterWithPos {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.write(buf)
+        let len = self.write(buf)?;
+        self.pos += len as u64;
+        Ok(len)
     }
     fn flush(&mut self) -> io::Result<()> {
         self.flush()
@@ -60,61 +80,67 @@ impl Write for BufWriterWithPos {
 
 impl Seek for BufWriterWithPos {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.writer.seek(pos)
+        self.pos = self.writer.seek(pos)?;
+        Ok(self.pos)
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 enum Operation {
-    Set {
-        key: String,
-        value: String,
-    },
-    Rm {
-        key: String
-    },
+    Set { key: String, value: String },
+    Rm { key: String },
 }
-
 
 impl KvStore {
     fn load(&mut self) {
-        let f = File::open(&self.db_path).expect("Unable to open file");
-        let reader = BufReader::new(f);
-        for line in reader.lines().map(|x| x.unwrap()) {
-            let s = line.trim();
-            let (op, key, value) = match serde_json::from_str(s) {
-                Ok(v) => v,
-                Err(e) => {
-                    println!("{:?}", e);
-                    continue;
+        let mut stream = Deserializer::from_reader(&mut self.reader).into_iter::<Operation>();
+        let mut pos: u64 = 0;
+        while let Some(op) = stream.next() {
+            let new_pos = stream.byte_offset() as u64;
+            match op.unwrap() {
+                Operation::Set { key, .. } => {
+                    self.index.insert(
+                        key,
+                        ValueLocation {
+                            pos,
+                            len: new_pos - pos
+                        },
+                    );
                 }
-            };
-            match op {
-                "set" => {
-                    self.map.insert(key, value);
-                }
-                "rm" => {
-                    self.map.remove(&key);
-                }
-                _ => println!("not valid operation"),
+                Operation::Rm { key } => {
+                    self.index.remove(&key);
+                },
             }
+            pos = new_pos;
         }
     }
-    pub fn get(&self, key: String) -> Result<Option<String>> {
-        Ok(self.map.get(&key).cloned())
+    pub fn get(&mut self, key: String) -> Result<Option<String>> {
+        let value_location = self.index.get(&key).ok_or(KvsError::KeyNotFound)?;
+        self.reader.seek(SeekFrom::Start(value_location.pos));
+        let buf_reader = self.reader.reader.get_mut().take(value_location.len);
+        match serde_json::from_reader(buf_reader)? {
+            Operation::Set { value, .. } => Ok(Some(value)),
+            _ => Err(KvsError::UnsupportedOperation),
+        }
     }
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        self.index.insert(key.clone(), value.clone());
         let row = Operation::Set { key, value };
+        let pos = self.writer.pos;
         serde_json::to_writer(&mut self.writer, &row)?;
-        self.writer.write("\n".as_bytes())?;
         self.writer.flush()?;
+        self.index.insert(
+            key.clone(),
+            ValueLocation {
+                pos,
+                len: self.writer.pos - pos,
+            },
+        );
         Ok(())
     }
     pub fn remove(&mut self, key: String) -> Result<()> {
         match self.index.remove(&key) {
             None => {
-                return Err(KvsError::KeyNotFound());
+                return Err(KvsError::KeyNotFound);
             }
             _ => (),
         };
@@ -127,8 +153,15 @@ impl KvStore {
         let mut path: PathBuf = path.into();
         path.push("db");
         let mut kvs = KvStore {
-            writer: BufWriter::new(path),
-            reader: BufReader::new(path),
+            path: path.clone(),
+            index: HashMap::new(),
+            writer: BufWriterWithPos::new(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path.clone())?,
+            )?,
+            reader: BufReaderWithPos::new(OpenOptions::new().read(true).open(path.clone())?)?,
         };
         kvs.load();
         Ok(kvs)
