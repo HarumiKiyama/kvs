@@ -1,12 +1,15 @@
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::fs::{File, OpenOptions, self};
+use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 
 use crate::{KvsError, Result};
+
+const COMPACTION_THRESHOLD: u64 = 1000 * 4;
 
 /// KvStore struct
 #[derive(Debug)]
@@ -15,6 +18,8 @@ pub struct KvStore {
     index: HashMap<String, ValueLocation>,
     writer: BufWriterWithPos,
     reader: BufReaderWithPos,
+    // uncompacted data bytes
+    uncompacted: u64,
 }
 
 #[derive(Debug)]
@@ -103,16 +108,19 @@ impl KvStore {
             let new_pos = stream.byte_offset() as u64;
             match op.unwrap() {
                 Operation::Set { key, .. } => {
-                    self.index.insert(
+                    if let Some(v) = self.index.insert(
                         key,
                         ValueLocation {
                             pos,
                             len: new_pos - pos,
                         },
-                    );
+                    ) {
+                        self.uncompacted += v.len;
+                    };
                 }
                 Operation::Rm { key } => {
-                    self.index.remove(&key);
+                    let v = self.index.remove(&key).unwrap();
+                    self.uncompacted += v.len;
                 }
             }
             pos = new_pos;
@@ -135,15 +143,56 @@ impl KvStore {
         let pos = self.writer.pos;
         serde_json::to_writer(&mut self.writer, &row)?;
         self.writer.flush()?;
-        self.index.insert(
+        if let Some(v) = self.index.insert(
             key,
             ValueLocation {
                 pos,
                 len: self.writer.pos - pos,
             },
-        );
+        ) {
+            self.uncompacted += v.len;
+        };
+        if self.uncompacted >= COMPACTION_THRESHOLD {
+            self.compact()?;
+        }
         Ok(())
     }
+    fn compact(&mut self) -> Result<()> {
+        let mut archive_path = self.path.clone();
+        archive_path.push(format!("db.archive.{:?}", SystemTime::now()));
+        let mut current_path = self.path.clone();
+        current_path.push("db");
+        let mut archive_reader = self.reader.get_mut();
+        archive_reader.seek(SeekFrom::Start(0))?;
+        let mut archive_writer = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&archive_path)?;
+        io::copy(&mut archive_reader, &mut archive_writer)?;
+        fs::remove_file(&current_path)?;
+        let mut writer = BufWriterWithPos::new(
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&current_path)?)?;
+        let mut reader = BufReaderWithPos::new(
+            OpenOptions::new().read(true).open(&archive_path)?)?;
+        let mut new_pos = 0;
+        for v in self.index.values_mut() {
+            let cur_reader = reader.get_mut();
+            cur_reader.seek(SeekFrom::Start(v.pos))?;
+            let mut data_reader = cur_reader.take(v.len);
+            let len = io::copy(&mut data_reader, &mut writer)?;
+            *v = ValueLocation { pos: new_pos, len };
+            new_pos += len;
+        }
+        writer.flush()?;
+        self.writer = writer;
+        self.uncompacted = 0;
+        fs::remove_file(&archive_path)?;
+        Ok(())
+    }
+
     pub fn remove(&mut self, key: String) -> Result<()> {
         if self.index.remove(&key).is_none() {
             return Err(KvsError::KeyNotFound);
@@ -154,18 +203,20 @@ impl KvStore {
         Ok(())
     }
     pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
-        let mut path: PathBuf = path.into();
-        path.push("db");
+        let dir = path.into();
+        let mut db_path: PathBuf = dir.clone();
+        db_path.push("db");
         let mut kvs = KvStore {
-            path: path.clone(),
+            path: dir,
             index: HashMap::new(),
             writer: BufWriterWithPos::new(
                 OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(path.clone())?,
+                    .open(&db_path)?,
             )?,
-            reader: BufReaderWithPos::new(OpenOptions::new().read(true).open(path.clone())?)?,
+            reader: BufReaderWithPos::new(OpenOptions::new().read(true).open(&db_path)?)?,
+            uncompacted: 0,
         };
         kvs.load();
         Ok(kvs)

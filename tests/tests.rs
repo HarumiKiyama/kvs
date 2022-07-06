@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use assert_cmd::prelude::*;
 use kvs::{KvStore, Result};
 use predicates::ord::eq;
@@ -258,11 +259,13 @@ fn remove_key() -> Result<()> {
 // Test data correctness after compaction.
 #[test]
 fn compaction() -> Result<()> {
-    let temp_dir = TempDir::new().expect("unable to create temporary working directory");
-    let mut store = KvStore::open(temp_dir.path())?;
+    //let temp_dir = TempDir::new().expect("unable to create temporary working directory");
+    let mut temp_dir = PathBuf::new();
+    temp_dir.push("/home/wlc/rust_project");
+    let mut store = KvStore::open(temp_dir.as_path())?;
 
     let dir_size = || {
-        let entries = WalkDir::new(temp_dir.path()).into_iter();
+        let entries = WalkDir::new(temp_dir.as_path()).into_iter();
         let len: walkdir::Result<u64> = entries
             .map(|res| {
                 res.and_then(|entry| entry.metadata())
@@ -289,7 +292,7 @@ fn compaction() -> Result<()> {
 
         drop(store);
         // reopen and check content.
-        let mut store = KvStore::open(temp_dir.path())?;
+        let mut store = KvStore::open(temp_dir.as_path())?;
         for key_id in 0..1000 {
             let key = format!("key{}", key_id);
             assert_eq!(store.get(key)?, Some(format!("{}", iter)));
