@@ -9,7 +9,7 @@ use serde_json::Deserializer;
 
 use crate::{KvsError, Result};
 
-const COMPACTION_THRESHOLD: u64 = 1000 * 4;
+const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
 
 /// KvStore struct
 #[derive(Debug)]
@@ -162,13 +162,7 @@ impl KvStore {
         archive_path.push(format!("db.archive.{:?}", SystemTime::now()));
         let mut current_path = self.path.clone();
         current_path.push("db");
-        let mut archive_reader = self.reader.get_mut();
-        archive_reader.seek(SeekFrom::Start(0))?;
-        let mut archive_writer = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(&archive_path)?;
-        io::copy(&mut archive_reader, &mut archive_writer)?;
+        fs::copy(&current_path, &archive_path)?;
         fs::remove_file(&current_path)?;
         let mut writer = BufWriterWithPos::new(
             OpenOptions::new()
