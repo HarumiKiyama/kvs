@@ -408,6 +408,7 @@ dependencies = [
  "assert_cmd",
  "clap 3.2.7",
  "criterion",
+ "log",
  "predicates",
  "rand",
  "serde",
