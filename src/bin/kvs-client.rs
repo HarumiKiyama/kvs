@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -6,8 +8,8 @@ struct Cli {
     #[clap(subcommand)]
     command: Option<Command>,
 
-    #[clap(long, value_parser, default_value_t=String::from("127.0.0.1:4000"))]
-    addr: String,
+    #[clap(long, value_parser)]
+    addr: Option<SocketAddr>,
 }
 
 #[derive(Subcommand)]
@@ -30,6 +32,7 @@ enum Command {
 
 fn main() {
     let cli = Cli::parse();
+    let ip = cli.addr.unwrap_or(default);
     match &cli.command {
         Some(Command::Set { key, value }) => {
             todo!();
