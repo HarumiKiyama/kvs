@@ -1,5 +1,4 @@
-use std::env;
-use log::{info, warn, error};
+use log::{warn, error};
 
 pub struct KvsServer{}
 

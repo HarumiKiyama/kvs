@@ -32,7 +32,6 @@ enum Command {
 
 fn main() {
     let cli = Cli::parse();
-    let ip = cli.addr.unwrap_or(default);
     match &cli.command {
         Some(Command::Set { key, value }) => {
             todo!();
