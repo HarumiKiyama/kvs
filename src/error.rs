@@ -1,3 +1,5 @@
+use serde_json;
+use sled;
 use std::io;
 use thiserror::Error;
 
@@ -16,8 +18,9 @@ pub enum KvsError {
     /// unexpected command type error
     #[error("Unsupported operation")]
     UnsupportedOperation,
+    #[error("sled error")]
+    Sled(#[from] sled::Error),
 }
 
 /// Result type for kvs
 pub type Result<T> = std::result::Result<T, KvsError>;
-
