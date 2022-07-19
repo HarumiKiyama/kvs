@@ -4,6 +4,7 @@ use std::{
     io::Write,
     net::{SocketAddr, TcpListener},
 };
+use std::env::current_dir;
 
 use clap::{Parser, ValueEnum};
 use env_logger;
@@ -34,6 +35,7 @@ impl Display for EngineChoice {
     }
 }
 
+
 fn main() -> Result<()> {
     env_logger::init();
     let cli = Args::parse();
@@ -43,11 +45,14 @@ fn main() -> Result<()> {
         cli.engine,
         cli.addr
     );
-    let mut engine = match cli.engine {
-        EngineChoice::Kvs => KvStore::new(),
-        EngineChoice::Sled => SledKvsEngine::new()
-    }?;
-    let listener = TcpListener::bind(cli.addr)?;
+    match cli.engine {
+        EngineChoice::Kvs => run_with_engine(KvStore::open(current_dir()?)?, cli.addr),
+        EngineChoice::Sled => run_with_engine(SledKvsEngine::open(current_dir()?)?, cli.addr)
+    }
+}
+
+fn run_with_engine(mut engine: impl KvsEngine, addr: SocketAddr) -> Result<()> {
+    let listener = TcpListener::bind(addr)?;
     for stream_res in listener.incoming() {
         let mut stream = stream_res?;
         match serde_json::from_reader(&stream)? {
@@ -56,7 +61,7 @@ fn main() -> Result<()> {
             }
             CliOperation::Get { key } => {
                 let value = engine.get(key)?.unwrap_or(String::from(""));
-                write!(&mut stream, "{}", value)?;
+                serde_json::to_writer(&stream, &value)?;
             }
             CliOperation::Rm { key } => {
                 engine.remove(key)?;

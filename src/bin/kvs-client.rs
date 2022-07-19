@@ -1,4 +1,5 @@
 use std::{net::{SocketAddr, TcpStream}, io::Read};
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 
@@ -35,7 +36,7 @@ enum Command {
     },
 }
 
-fn main() -> Result<()>{
+fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Some(Command::Set { key, value, addr }) => {
@@ -69,11 +70,16 @@ fn main() -> Result<()>{
     }
 }
 
-fn run(op: CliOperation, addr: SocketAddr) -> Result<()>{
+fn run(op: CliOperation, addr: SocketAddr) -> Result<()> {
     let mut stream = TcpStream::connect(addr)?;
     serde_json::to_writer(&mut stream, &op)?;
-    let mut output = String::new();
-    stream.read_to_string(&mut output)?;
-    println!("{}", output);
+    match op {
+        CliOperation::Get { .. } => {
+            stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+            let output = serde_json::from_reader(&stream)?;
+            println!("{:?}", output);
+        }
+        _ => {}
+    }
     Ok(())
 }

@@ -5,6 +5,7 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use log::error;
 use tempfile::TempDir;
 
 // `kvs-client` with no args should exit with a non-zero code.

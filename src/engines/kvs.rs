@@ -102,17 +102,17 @@ enum Operation {
 
 impl KvsEngine for KvStore {
     fn get(&mut self, key: String) -> Result<Option<String>> {
-            if let Some(value_location) = self.index.get(&key) {
-                self.reader.seek(SeekFrom::Start(value_location.pos))?;
-                let buf_reader = self.reader.get_mut().take(value_location.len);
-                match serde_json::from_reader(buf_reader)? {
-                    Operation::Set { value, .. } => Ok(Some(value)),
-                    _ => Err(KvsError::UnsupportedOperation),
-                }
-            } else {
-                return Ok(None);
+        if let Some(value_location) = self.index.get(&key) {
+            self.reader.seek(SeekFrom::Start(value_location.pos))?;
+            let buf_reader = self.reader.get_mut().take(value_location.len);
+            match serde_json::from_reader(buf_reader)? {
+                Operation::Set { value, .. } => Ok(Some(value)),
+                _ => Err(KvsError::UnsupportedOperation),
             }
+        } else {
+            return Ok(None);
         }
+    }
     fn remove(&mut self, key: String) -> Result<()> {
         if self.index.remove(&key).is_none() {
             return Err(KvsError::KeyNotFound);
@@ -217,8 +217,5 @@ impl KvStore {
         };
         kvs.load();
         Ok(kvs)
-    }
-    pub fn new() -> Result<Self> {
-        Self::open("/tmp")
     }
 }
