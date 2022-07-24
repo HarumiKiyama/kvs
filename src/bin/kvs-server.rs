@@ -1,15 +1,17 @@
 use log::error;
-use std::env::current_dir;
+use serde_json::Deserializer;
 use std::{
+    env::current_dir,
     fmt::Display,
     fs,
+    io::{BufReader, BufWriter},
     net::{SocketAddr, TcpListener},
 };
 
 use clap::{Parser, ValueEnum};
 use env_logger;
 
-use kvs::{CliOperation, KvStore, KvsEngine, Response, Result, SledKvsEngine, DEFAULT_IP_ADDR};
+use kvs::{KvStore, KvsEngine, Request, Response, Result, SledKvsEngine, DEFAULT_IP_ADDR};
 
 #[derive(Parser)]
 #[clap(version)]
@@ -94,28 +96,34 @@ fn run_with_engine(mut engine: impl KvsEngine, addr: SocketAddr) -> Result<()> {
     let listener = TcpListener::bind(addr)?;
     for stream_res in listener.incoming() {
         let stream = stream_res?;
-        match serde_json::from_reader(&stream)? {
-            CliOperation::Set { key, value } => {
-                engine.set(key, value)?;
-                serde_json::to_writer(
-                    &stream,
-                    &Response::Set {
-                        value: String::new(),
-                    },
-                )?;
-            }
-            CliOperation::Get { key } => {
-                let value = engine.get(key)?.unwrap_or(String::from(""));
-                serde_json::to_writer(&stream, &Response::Get { value })?;
-            }
-            CliOperation::Rm { key } => {
-                engine.remove(key)?;
-                serde_json::to_writer(
-                    &stream,
-                    &Response::Rm {
-                        value: String::new(),
-                    },
-                )?;
+        let reader = BufReader::new(&stream);
+        let mut writer = BufWriter::new(&stream);
+        let operations = Deserializer::from_reader(reader).into_iter::<Request>();
+        for op in operations {
+            let op = op?;
+            match op {
+                Request::Set { key, value } => {
+                    engine.set(key, value)?;
+                    serde_json::to_writer(
+                        &mut writer,
+                        &Response::Set {
+                            value: String::new(),
+                        },
+                    )?;
+                }
+                Request::Get { key } => {
+                    let value = engine.get(key)?.unwrap_or(String::from(""));
+                    serde_json::to_writer(&stream, &Response::Get { value })?;
+                }
+                Request::Rm { key } => {
+                    engine.remove(key)?;
+                    serde_json::to_writer(
+                        &stream,
+                        &Response::Rm {
+                            value: String::new(),
+                        },
+                    )?;
+                }
             }
         }
     }

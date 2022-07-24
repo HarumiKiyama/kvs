@@ -1,9 +1,14 @@
-use std::net::{SocketAddr, TcpStream};
-use std::time::Duration;
+use serde::Deserialize;
+use serde_json::de::Deserializer;
+use std::{
+    io::{BufReader, BufWriter, Write},
+    net::{SocketAddr, TcpStream},
+    time::Duration,
+};
 
 use clap::{Parser, Subcommand};
 
-use kvs::{CliOperation, Result, DEFAULT_IP_ADDR};
+use kvs::{Request, Response, Result, DEFAULT_IP_ADDR};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -39,23 +44,26 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Some(Command::Set { key, value, addr }) => run(CliOperation::Set { key, value }, addr),
-        Some(Command::Get { key, addr }) => run(CliOperation::Get { key }, addr),
-        Some(Command::Rm { key, addr }) => run(CliOperation::Rm { key }, addr),
+        Some(Command::Set { key, value, addr }) => run(Request::Set { key, value }, addr),
+        Some(Command::Get { key, addr }) => run(Request::Get { key }, addr),
+        Some(Command::Rm { key, addr }) => run(Request::Rm { key }, addr),
         None => {
             unimplemented!();
         }
     }
 }
 
-fn run(op: CliOperation, addr: SocketAddr) -> Result<()> {
-    let mut stream = TcpStream::connect(addr)?;
+fn run(op: Request, addr: SocketAddr) -> Result<()> {
+    let stream = TcpStream::connect(addr)?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
-    serde_json::to_writer(&mut stream, &op)?;
+    let mut reader = Deserializer::from_reader(BufReader::new(&stream));
+    let mut writer = BufWriter::new(&stream);
+    serde_json::to_writer(&mut writer, &op)?;
+    writer.flush()?;
     match op {
-        CliOperation::Get { .. } => {
-            let output = serde_json::from_reader(&stream)?;
-            println!("{:?}", output);
+        Request::Get { .. } => {
+            let output = Response::deserialize(&mut reader)?;
+            println!("{}", output);
         }
         _ => {}
     }
