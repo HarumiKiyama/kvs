@@ -8,3 +8,10 @@ pub enum CliOperation {
     Get { key: String },
     Rm { key: String },
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Response {
+    Get { value: String },
+    Rm { value: String },
+    Set { value: String },
+}

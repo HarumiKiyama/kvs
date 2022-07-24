@@ -1,11 +1,11 @@
 use assert_cmd::prelude::*;
+use log::error;
 use predicates::str::{contains, is_empty};
 use std::fs::{self, File};
 use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
-use log::error;
 use tempfile::TempDir;
 
 // `kvs-client` with no args should exit with a non-zero code.

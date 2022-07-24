@@ -1,9 +1,9 @@
-use std::{net::{SocketAddr, TcpStream}, io::Read};
+use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 
-use kvs::{CliOperation, DEFAULT_IP_ADDR, Result};
+use kvs::{CliOperation, Result, DEFAULT_IP_ADDR};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -39,31 +39,9 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Some(Command::Set { key, value, addr }) => {
-            run(
-                CliOperation::Set {
-                    key,
-                    value,
-                },
-                addr,
-            )
-        }
-        Some(Command::Get { key, addr }) => {
-            run(
-                CliOperation::Get {
-                    key,
-                },
-                addr,
-            )
-        }
-        Some(Command::Rm { key, addr }) => {
-            run(
-                CliOperation::Rm {
-                    key,
-                },
-                addr,
-            )
-        }
+        Some(Command::Set { key, value, addr }) => run(CliOperation::Set { key, value }, addr),
+        Some(Command::Get { key, addr }) => run(CliOperation::Get { key }, addr),
+        Some(Command::Rm { key, addr }) => run(CliOperation::Rm { key }, addr),
         None => {
             unimplemented!();
         }
@@ -72,10 +50,10 @@ fn main() -> Result<()> {
 
 fn run(op: CliOperation, addr: SocketAddr) -> Result<()> {
     let mut stream = TcpStream::connect(addr)?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     serde_json::to_writer(&mut stream, &op)?;
     match op {
         CliOperation::Get { .. } => {
-            stream.set_read_timeout(Some(Duration::from_secs(3)))?;
             let output = serde_json::from_reader(&stream)?;
             println!("{:?}", output);
         }

@@ -1,8 +1,8 @@
 //! A simple key/value store.
+pub use common::{CliOperation, Response, DEFAULT_IP_ADDR};
+pub use engines::{KvStore, KvsEngine, SledKvsEngine};
 pub use error::{KvsError, Result};
-pub use engines::{KvStore, SledKvsEngine, KvsEngine};
-pub use common::{DEFAULT_IP_ADDR, CliOperation};
 
-mod error;
-mod engines;
 mod common;
+mod engines;
+mod error;
