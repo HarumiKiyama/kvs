@@ -103,26 +103,25 @@ fn run_with_engine(mut engine: impl KvsEngine, addr: SocketAddr) -> Result<()> {
             let op = op?;
             match op {
                 Request::Set { key, value } => {
-                    engine.set(key, value)?;
-                    serde_json::to_writer(
-                        &mut writer,
-                        &Response::Set {
-                            value: String::new(),
-                        },
-                    )?;
+                    let value = match engine.set(key, value) {
+                        Ok(..) => "ok".to_string(),
+                        Err(e) => format!("{}", e),
+                    };
+                    serde_json::to_writer(&mut writer, &Response::Set { value })?;
                 }
                 Request::Get { key } => {
-                    let value = engine.get(key)?.unwrap_or(String::from(""));
+                    let value = match engine.get(key)? {
+                        Some(value) => value,
+                        None => "Key not found".to_string(),
+                    };
                     serde_json::to_writer(&stream, &Response::Get { value })?;
                 }
                 Request::Rm { key } => {
-                    engine.remove(key)?;
-                    serde_json::to_writer(
-                        &stream,
-                        &Response::Rm {
-                            value: String::new(),
-                        },
-                    )?;
+                    let value = match engine.remove(key) {
+                        Ok(..) => "ok".to_string(),
+                        Err(e) => format!("{}", e),
+                    };
+                    serde_json::to_writer(&stream, &Response::Rm { value })?;
                 }
             }
         }

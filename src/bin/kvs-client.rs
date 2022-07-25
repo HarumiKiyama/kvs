@@ -1,3 +1,5 @@
+use env_logger;
+use log::error;
 use serde::Deserialize;
 use serde_json::de::Deserializer;
 use std::{
@@ -8,7 +10,7 @@ use std::{
 
 use clap::{Parser, Subcommand};
 
-use kvs::{Request, Response, Result, DEFAULT_IP_ADDR};
+use kvs::{KvsError, Request, Response, Result, DEFAULT_IP_ADDR};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -42,6 +44,7 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
     let cli = Cli::parse();
     match cli.command {
         Some(Command::Set { key, value, addr }) => run(Request::Set { key, value }, addr),
@@ -62,8 +65,17 @@ fn run(op: Request, addr: SocketAddr) -> Result<()> {
     writer.flush()?;
     match op {
         Request::Get { .. } => {
-            let output = Response::deserialize(&mut reader)?;
-            println!("{}", output);
+            if let Response::Get { value } = Response::deserialize(&mut reader)? {
+                println!("{}", value);
+            };
+        }
+        Request::Rm { .. } => {
+            if let Response::Rm { value } = Response::deserialize(&mut reader)? {
+                if value.as_str() != "ok" {
+                    error!("{}", value);
+                    return Err(KvsError::KeyNotFound);
+                }
+            }
         }
         _ => {}
     }

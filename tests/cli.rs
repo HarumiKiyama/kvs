@@ -1,5 +1,4 @@
 use assert_cmd::prelude::*;
-use log::error;
 use predicates::str::{contains, is_empty};
 use std::fs::{self, File};
 use std::process::Command;
