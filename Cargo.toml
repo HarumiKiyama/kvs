@@ -21,6 +21,8 @@ predicates = "1.0.0"
 rand = {version="0.8.5", features=["small_rng"]}
 tempfile = "3.0.7"
 walkdir = "2.2.7"
+crossbeam-utils = "0.6.5"
+panic-control = "0.1.4"
 
 [[bench]]
 name = "engine_bench"
