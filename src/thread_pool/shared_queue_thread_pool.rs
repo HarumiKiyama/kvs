@@ -1,8 +1,7 @@
 use super::ThreadPool;
+pub struct SharedQueueThreadPool;
 
-pub struct NaiveThreadPool;
-
-impl ThreadPool for NaiveThreadPool {
+impl ThreadPool for SharedQueueThreadPool {
     fn new(threads: u32) -> crate::Result<Self>
     where
         Self: Sized,

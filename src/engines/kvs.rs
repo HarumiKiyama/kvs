@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions, self};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -7,12 +7,12 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 
-use crate::{KvsError, Result, KvsEngine};
+use crate::{KvsEngine, KvsError, Result};
 
 const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
 
 /// KvStore struct
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KvStore {
     path: PathBuf,
     index: HashMap<String, ValueLocation>,
@@ -28,7 +28,13 @@ pub struct BufWriterWithPos {
     pos: u64,
 }
 
-#[derive(Debug)]
+impl Clone for BufWriterWithPos {
+    fn clone(&self) -> Self {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone)]
 struct ValueLocation {
     pos: u64,
     len: u64,
@@ -38,6 +44,11 @@ struct ValueLocation {
 pub struct BufReaderWithPos {
     reader: BufReader<File>,
     pos: u64,
+}
+impl Clone for BufReaderWithPos {
+    fn clone(&self) -> Self {
+        todo!()
+    }
 }
 
 impl BufReaderWithPos {
@@ -101,45 +112,51 @@ enum Operation {
 }
 
 impl KvsEngine for KvStore {
-    fn get(&mut self, key: String) -> Result<Option<String>> {
-        if let Some(value_location) = self.index.get(&key) {
-            self.reader.seek(SeekFrom::Start(value_location.pos))?;
-            let buf_reader = self.reader.get_mut().take(value_location.len);
-            match serde_json::from_reader(buf_reader)? {
-                Operation::Set { value, .. } => Ok(Some(value)),
-                _ => Err(KvsError::UnsupportedOperation),
-            }
-        } else {
-            return Ok(None);
-        }
+    fn get(&self, key: String) -> Result<Option<String>> {
+        todo!()
+        // if let Some(value_location) = self.index.get(&key) {
+        //     self.reader.seek(SeekFrom::Start(value_location.pos))?;
+        //     let buf_reader = self.reader.get_mut().take(value_location.len);
+        //     match serde_json::from_reader(buf_reader)? {
+        //         Operation::Set { value, .. } => Ok(Some(value)),
+        //         _ => Err(KvsError::UnsupportedOperation),
+        //     }
+        // } else {
+        //     return Ok(None);
+        // }
     }
-    fn remove(&mut self, key: String) -> Result<()> {
-        if self.index.remove(&key).is_none() {
-            return Err(KvsError::KeyNotFound);
-        };
-        let row = Operation::Rm { key };
-        serde_json::to_writer(&mut self.writer, &row)?;
-        self.writer.flush()?;
-        Ok(())
+    fn remove(&self, key: String) -> Result<()> {
+        todo!()
+        // if self.index.remove(&key).is_none() {
+        //     return Err(KvsError::KeyNotFound);
+        // };
+        // let row = Operation::Rm { key };
+        // serde_json::to_writer(&self.writer, &row)?;
+        // self.writer.flush()?;
+        // Ok(())
     }
-    fn set(&mut self, key: String, value: String) -> Result<()> {
-        let row = Operation::Set { key: key.clone(), value };
-        let pos = self.writer.pos;
-        serde_json::to_writer(&mut self.writer, &row)?;
-        self.writer.flush()?;
-        if let Some(v) = self.index.insert(
-            key,
-            ValueLocation {
-                pos,
-                len: self.writer.pos - pos,
-            },
-        ) {
-            self.uncompacted += v.len;
-        };
-        if self.uncompacted >= COMPACTION_THRESHOLD {
-            self.compact()?;
-        }
-        Ok(())
+    fn set(&self, key: String, value: String) -> Result<()> {
+        todo!()
+        //     let row = Operation::Set {
+        //         key: key.clone(),
+        //         value,
+        //     };
+        //     let pos = self.writer.pos;
+        //     serde_json::to_writer(&mut self.writer, &row)?;
+        //     self.writer.flush()?;
+        //     if let Some(v) = self.index.insert(
+        //         key,
+        //         ValueLocation {
+        //             pos,
+        //             len: self.writer.pos - pos,
+        //         },
+        //     ) {
+        //         self.uncompacted += v.len;
+        //     };
+        //     if self.uncompacted >= COMPACTION_THRESHOLD {
+        //         self.compact()?;
+        //     }
+        //     Ok(())
     }
 }
 
@@ -180,9 +197,9 @@ impl KvStore {
             OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(&current_path)?)?;
-        let mut reader = BufReaderWithPos::new(
-            OpenOptions::new().read(true).open(&archive_path)?)?;
+                .open(&current_path)?,
+        )?;
+        let mut reader = BufReaderWithPos::new(OpenOptions::new().read(true).open(&archive_path)?)?;
         let mut new_pos = 0;
         for v in self.index.values_mut() {
             let cur_reader = reader.get_mut();

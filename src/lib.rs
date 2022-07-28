@@ -2,9 +2,9 @@
 pub use common::{Request, Response, DEFAULT_IP_ADDR};
 pub use engines::{KvStore, KvsEngine, SledKvsEngine};
 pub use error::{KvsError, Result};
-pub use thread_pool::ThreadPool;
+pub use thread_pool::{NaiveThreadPool, SharedQueueThreadPool, ThreadPool};
 
 mod common;
 mod engines;
 mod error;
-mod thread_pool;
+pub mod thread_pool;

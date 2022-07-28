@@ -92,7 +92,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn run_with_engine(mut engine: impl KvsEngine, addr: SocketAddr) -> Result<()> {
+fn run_with_engine(engine: impl KvsEngine, addr: SocketAddr) -> Result<()> {
     let listener = TcpListener::bind(addr)?;
     for stream_res in listener.incoming() {
         let stream = stream_res?;

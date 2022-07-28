@@ -1,8 +1,7 @@
 use super::ThreadPool;
+pub struct RayonThreadPool;
 
-pub struct NaiveThreadPool;
-
-impl ThreadPool for NaiveThreadPool {
+impl ThreadPool for RayonThreadPool {
     fn new(threads: u32) -> crate::Result<Self>
     where
         Self: Sized,
