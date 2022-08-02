@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
@@ -14,10 +15,10 @@ const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
 /// KvStore struct
 #[derive(Debug, Clone)]
 pub struct KvStore {
-    path: PathBuf,
-    index: HashMap<String, ValueLocation>,
-    writer: BufWriterWithPos,
-    reader: BufReaderWithPos,
+    path: Arc<PathBuf>,
+    index: Arc<HashMap<String, ValueLocation>>,
+    writer: Arc<BufWriterWithPos>,
+    reader: Arc<BufReaderWithPos>,
     // uncompacted data bytes
     uncompacted: u64,
 }
@@ -28,11 +29,6 @@ pub struct BufWriterWithPos {
     pos: u64,
 }
 
-impl Clone for BufWriterWithPos {
-    fn clone(&self) -> Self {
-        todo!()
-    }
-}
 
 #[derive(Debug, Clone)]
 struct ValueLocation {
@@ -44,11 +40,6 @@ struct ValueLocation {
 pub struct BufReaderWithPos {
     reader: BufReader<File>,
     pos: u64,
-}
-impl Clone for BufReaderWithPos {
-    fn clone(&self) -> Self {
-        todo!()
-    }
 }
 
 impl BufReaderWithPos {
@@ -162,7 +153,8 @@ impl KvsEngine for KvStore {
 
 impl KvStore {
     fn load(&mut self) {
-        let mut stream = Deserializer::from_reader(&mut self.reader).into_iter::<Operation>();
+        let mut stream = Deserializer::from_reader(
+            self.reader).into_iter::<Operation>();
         let mut pos: u64 = 0;
         while let Some(op) = stream.next() {
             let new_pos = stream.byte_offset() as u64;
@@ -187,9 +179,9 @@ impl KvStore {
         }
     }
     fn compact(&mut self) -> Result<()> {
-        let mut archive_path = self.path.clone();
+        let mut archive_path = self.path.as_ref();
         archive_path.push(format!("db.archive.{:?}", SystemTime::now()));
-        let mut current_path = self.path.clone();
+        let mut current_path = self.path.as_ref();
         current_path.push("db");
         fs::copy(&current_path, &archive_path)?;
         fs::remove_file(&current_path)?;
@@ -210,7 +202,7 @@ impl KvStore {
             new_pos += len;
         }
         writer.flush()?;
-        self.writer = writer;
+        self.writer = Arc::new(writer);
         self.uncompacted = 0;
         fs::remove_file(&archive_path)?;
         Ok(())
@@ -221,15 +213,15 @@ impl KvStore {
         let mut db_path: PathBuf = dir.clone();
         db_path.push("db");
         let mut kvs = KvStore {
-            path: dir,
-            index: HashMap::new(),
-            writer: BufWriterWithPos::new(
+            path: Arc::new(dir),
+            index: Arc::new(HashMap::new()),
+            writer: Arc::new(BufWriterWithPos::new(
                 OpenOptions::new()
                     .create(true)
                     .append(true)
                     .open(&db_path)?,
-            )?,
-            reader: BufReaderWithPos::new(OpenOptions::new().read(true).open(&db_path)?)?,
+            )?),
+            reader: Arc::new(BufReaderWithPos::new(OpenOptions::new().read(true).open(&db_path)?)?),
             uncompacted: 0,
         };
         kvs.load();
