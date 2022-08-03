@@ -104,18 +104,16 @@ enum Operation {
 
 impl KvsEngine for KvStore {
     fn get(&self, key: String) -> Result<Option<String>> {
-        if let Some(value_location) = self.index.lock().unwrap().get(&key) {
+        let index = self.index.lock().unwrap();
+        let mut reader = self.reader.lock().unwrap();
+        if let Some(value_location) = index.get(&key) {
             self.reader
                 .lock()
                 .unwrap()
                 .seek(SeekFrom::Start(value_location.pos))?;
-            let buf_reader = self
-                .reader
-                .lock()
-                .unwrap()
-                .get_mut()
-                .take(value_location.len);
-            match serde_json::from_reader(buf_reader)? {
+            let mut buf: Vec<u8> = vec![0; value_location.len as usize];
+            reader.read_exact(&mut buf)?;
+            match serde_json::from_slice(&buf)? {
                 Operation::Set { value, .. } => Ok(Some(value)),
                 _ => Err(KvsError::UnsupportedOperation),
             }
@@ -138,7 +136,7 @@ impl KvsEngine for KvStore {
             value,
         };
         let pos = self.writer.lock().unwrap().pos;
-        serde_json::to_writer(*self.writer.lock().unwrap(), &row)?;
+        serde_json::to_writer(self.writer.lock().unwrap().deref_mut(), &row)?;
         self.writer.lock().unwrap().flush()?;
         if let Some(v) = self.index.lock().unwrap().insert(
             key,
