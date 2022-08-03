@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -127,7 +128,7 @@ impl KvsEngine for KvStore {
             return Err(KvsError::KeyNotFound);
         };
         let row = Operation::Rm { key };
-        serde_json::to_writer(*self.writer.lock().unwrap(), &row)?;
+        serde_json::to_writer(self.writer.lock().unwrap().deref_mut(), &row)?;
         self.writer.lock().unwrap().flush()?;
         Ok(())
     }
@@ -158,7 +159,7 @@ impl KvsEngine for KvStore {
 impl KvStore {
     fn load(&mut self) {
         let mut reader = self.reader.lock().unwrap();
-        let mut stream = Deserializer::from_reader(&mut reader).into_iter::<Operation>();
+        let mut stream = Deserializer::from_reader(reader.deref_mut()).into_iter::<Operation>();
         let mut pos: u64 = 0;
         while let Some(op) = stream.next() {
             let new_pos = stream.byte_offset() as u64;
@@ -182,7 +183,7 @@ impl KvStore {
             pos = new_pos;
         }
     }
-    fn compact(&mut self) -> Result<()> {
+    fn compact(&self) -> Result<()> {
         let mut archive_path: PathBuf = self.path.to_path_buf();
         archive_path.push(format!("db.archive.{:?}", SystemTime::now()));
         let mut current_path = self.path.to_path_buf();
@@ -206,8 +207,8 @@ impl KvStore {
             new_pos += len;
         }
         writer.flush()?;
-        self.writer = Arc::new(Mutex::new(writer));
-        self.uncompacted = Arc::new(Mutex::new(0));
+        *self.writer.lock().unwrap() = writer;
+        *self.uncompacted.lock().unwrap() = 0;
         fs::remove_file(&archive_path)?;
         Ok(())
     }
