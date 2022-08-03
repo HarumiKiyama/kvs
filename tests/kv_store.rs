@@ -131,8 +131,9 @@ fn compaction() -> Result<()> {
 fn concurrent_set() -> Result<()> {
     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
     let store = KvStore::open(temp_dir.path())?;
-    let barrier = Arc::new(Barrier::new(1001));
-    for i in 0..1000 {
+    let loop_num = 1000;
+    let barrier = Arc::new(Barrier::new(loop_num + 1));
+    for i in 0..loop_num {
         let store = store.clone();
         let barrier = barrier.clone();
         thread::spawn(move || {
@@ -144,14 +145,14 @@ fn concurrent_set() -> Result<()> {
     }
     barrier.wait();
 
-    for i in 0..1000 {
+    for i in 0..loop_num {
         assert_eq!(store.get(format!("key{}", i))?, Some(format!("value{}", i)));
     }
 
     // Open from disk again and check persistent data
     drop(store);
     let store = KvStore::open(temp_dir.path())?;
-    for i in 0..1000 {
+    for i in 0..loop_num {
         assert_eq!(store.get(format!("key{}", i))?, Some(format!("value{}", i)));
     }
 

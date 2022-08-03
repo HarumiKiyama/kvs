@@ -104,15 +104,12 @@ enum Operation {
 
 impl KvsEngine for KvStore {
     fn get(&self, key: String) -> Result<Option<String>> {
-        let index = self.index.lock().unwrap();
-        let mut reader = self.reader.lock().unwrap();
-        if let Some(value_location) = index.get(&key) {
-            self.reader
-                .lock()
-                .unwrap()
-                .seek(SeekFrom::Start(value_location.pos))?;
+        let index_guard = self.index.lock().unwrap();
+        let mut reader_guard = self.reader.lock().unwrap();
+        if let Some(value_location) = index_guard.get(&key) {
+            reader_guard.seek(SeekFrom::Start(value_location.pos))?;
             let mut buf: Vec<u8> = vec![0; value_location.len as usize];
-            reader.read_exact(&mut buf)?;
+            reader_guard.read_exact(&mut buf)?;
             match serde_json::from_slice(&buf)? {
                 Operation::Set { value, .. } => Ok(Some(value)),
                 _ => Err(KvsError::UnsupportedOperation),
@@ -122,12 +119,14 @@ impl KvsEngine for KvStore {
         }
     }
     fn remove(&self, key: String) -> Result<()> {
-        if self.index.lock().unwrap().remove(&key).is_none() {
+        let mut writer_guard = self.writer.lock().unwrap();
+        let mut index_guard = self.index.lock().unwrap();
+        if index_guard.remove(&key).is_none() {
             return Err(KvsError::KeyNotFound);
         };
         let row = Operation::Rm { key };
-        serde_json::to_writer(self.writer.lock().unwrap().deref_mut(), &row)?;
-        self.writer.lock().unwrap().flush()?;
+        serde_json::to_writer(writer_guard.deref_mut(), &row)?;
+        writer_guard.flush()?;
         Ok(())
     }
     fn set(&self, key: String, value: String) -> Result<()> {
@@ -135,19 +134,22 @@ impl KvsEngine for KvStore {
             key: key.clone(),
             value,
         };
-        let pos = self.writer.lock().unwrap().pos;
-        serde_json::to_writer(self.writer.lock().unwrap().deref_mut(), &row)?;
-        self.writer.lock().unwrap().flush()?;
-        if let Some(v) = self.index.lock().unwrap().insert(
+        let mut writer_guard = self.writer.lock().unwrap();
+        let mut uncompacted_guard = self.uncompacted.lock().unwrap();
+        let mut index_guard = self.index.lock().unwrap();
+        let pos = writer_guard.pos;
+        serde_json::to_writer(writer_guard.deref_mut(), &row)?;
+        writer_guard.flush()?;
+        if let Some(v) = index_guard.insert(
             key,
             ValueLocation {
                 pos,
-                len: self.writer.lock().unwrap().pos - pos,
+                len: writer_guard.pos - pos,
             },
         ) {
-            *self.uncompacted.lock().unwrap() += v.len;
+            *uncompacted_guard += v.len;
         };
-        if *self.uncompacted.lock().unwrap() >= COMPACTION_THRESHOLD {
+        if *uncompacted_guard >= COMPACTION_THRESHOLD {
             self.compact()?;
         }
         Ok(())
@@ -155,27 +157,29 @@ impl KvsEngine for KvStore {
 }
 
 impl KvStore {
-    fn load(&mut self) {
-        let mut reader = self.reader.lock().unwrap();
-        let mut stream = Deserializer::from_reader(reader.deref_mut()).into_iter::<Operation>();
+    fn load(&self) {
+        let mut reader_guard = self.reader.lock().unwrap();
+        let mut index_guard = self.index.lock().unwrap();
+        let mut uncompacted_guard = self.uncompacted.lock().unwrap();
+        let mut stream = Deserializer::from_reader(reader_guard.deref_mut()).into_iter::<Operation>();
         let mut pos: u64 = 0;
         while let Some(op) = stream.next() {
             let new_pos = stream.byte_offset() as u64;
             match op.unwrap() {
                 Operation::Set { key, .. } => {
-                    if let Some(v) = self.index.lock().unwrap().insert(
+                    if let Some(v) = index_guard.insert(
                         key,
                         ValueLocation {
                             pos,
                             len: new_pos - pos,
                         },
                     ) {
-                        *self.uncompacted.lock().unwrap() += v.len;
+                        *uncompacted_guard += v.len;
                     };
                 }
                 Operation::Rm { key } => {
-                    let v = self.index.lock().unwrap().remove(&key).unwrap();
-                    *self.uncompacted.lock().unwrap() += v.len;
+                    let v = index_guard.remove(&key).unwrap();
+                    *uncompacted_guard += v.len;
                 }
             }
             pos = new_pos;
@@ -196,7 +200,8 @@ impl KvStore {
         )?;
         let mut reader = BufReaderWithPos::new(OpenOptions::new().read(true).open(&archive_path)?)?;
         let mut new_pos = 0;
-        for v in self.index.lock().unwrap().values_mut() {
+        let mut index_guard = self.index.lock().unwrap();
+        for v in index_guard.values_mut() {
             let cur_reader = reader.get_mut();
             cur_reader.seek(SeekFrom::Start(v.pos))?;
             let mut data_reader = cur_reader.take(v.len);
@@ -215,7 +220,7 @@ impl KvStore {
         let dir = path.into();
         let mut db_path: PathBuf = dir.clone();
         db_path.push("db");
-        let mut kvs = KvStore {
+        let kvs = KvStore {
             path: Arc::new(dir),
             index: Arc::new(Mutex::new(HashMap::new())),
             writer: Arc::new(Mutex::new(BufWriterWithPos::new(
