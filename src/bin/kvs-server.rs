@@ -11,7 +11,10 @@ use std::{
 use clap::{Parser, ValueEnum};
 use env_logger;
 
-use kvs::{KvStore, KvsEngine, Request, Response, Result, SledKvsEngine, DEFAULT_IP_ADDR};
+use kvs::{
+    KvStore, KvsEngine, NaiveThreadPool, Request, Response, Result, SledKvsEngine, ThreadPool,
+    DEFAULT_IP_ADDR,
+};
 
 #[derive(Parser)]
 #[clap(version)]
@@ -94,37 +97,40 @@ fn main() -> Result<()> {
 
 fn run_with_engine(engine: impl KvsEngine, addr: SocketAddr) -> Result<()> {
     let listener = TcpListener::bind(addr)?;
+    let pool = NaiveThreadPool::new(1000)?;
     for stream_res in listener.incoming() {
-        let stream = stream_res?;
-        let reader = BufReader::new(&stream);
-        let mut writer = BufWriter::new(&stream);
-        let operations = Deserializer::from_reader(reader).into_iter::<Request>();
-        for op in operations {
-            let op = op?;
-            match op {
-                Request::Set { key, value } => {
-                    let value = match engine.set(key, value) {
-                        Ok(..) => "ok".to_string(),
-                        Err(e) => format!("{}", e),
-                    };
-                    serde_json::to_writer(&mut writer, &Response::Set { value })?;
-                }
-                Request::Get { key } => {
-                    let value = match engine.get(key)? {
-                        Some(value) => value,
-                        None => "Key not found".to_string(),
-                    };
-                    serde_json::to_writer(&stream, &Response::Get { value })?;
-                }
-                Request::Rm { key } => {
-                    let value = match engine.remove(key) {
-                        Ok(..) => "ok".to_string(),
-                        Err(e) => format!("{}", e),
-                    };
-                    serde_json::to_writer(&stream, &Response::Rm { value })?;
+        pool.spawn(|| {
+            let stream = stream_res?;
+            let reader = BufReader::new(&stream);
+            let mut writer = BufWriter::new(&stream);
+            let operations = Deserializer::from_reader(reader).into_iter::<Request>();
+            for op in operations {
+                let op = op?;
+                match op {
+                    Request::Set { key, value } => {
+                        let value = match engine.set(key, value) {
+                            Ok(..) => "ok".to_string(),
+                            Err(e) => format!("{}", e),
+                        };
+                        serde_json::to_writer(&mut writer, &Response::Set { value })?;
+                    }
+                    Request::Get { key } => {
+                        let value = match engine.get(key)? {
+                            Some(value) => value,
+                            None => "Key not found".to_string(),
+                        };
+                        serde_json::to_writer(&stream, &Response::Get { value })?;
+                    }
+                    Request::Rm { key } => {
+                        let value = match engine.remove(key) {
+                            Ok(..) => "ok".to_string(),
+                            Err(e) => format!("{}", e),
+                        };
+                        serde_json::to_writer(&stream, &Response::Rm { value })?;
+                    }
                 }
             }
-        }
+        })
     }
     Ok(())
 }

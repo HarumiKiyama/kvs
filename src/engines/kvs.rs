@@ -161,7 +161,8 @@ impl KvStore {
         let mut reader_guard = self.reader.lock().unwrap();
         let mut index_guard = self.index.lock().unwrap();
         let mut uncompacted_guard = self.uncompacted.lock().unwrap();
-        let mut stream = Deserializer::from_reader(reader_guard.deref_mut()).into_iter::<Operation>();
+        let mut stream =
+            Deserializer::from_reader(reader_guard.deref_mut()).into_iter::<Operation>();
         let mut pos: u64 = 0;
         while let Some(op) = stream.next() {
             let new_pos = stream.byte_offset() as u64;
