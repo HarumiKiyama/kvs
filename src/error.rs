@@ -20,6 +20,8 @@ pub enum KvsError {
     UnsupportedOperation,
     #[error("sled error")]
     Sled(#[from] sled::Error),
+    #[error("rayon thread pool build error")]
+    ThreadPoolBuilderError(#[from] rayon::ThreadPoolBuildError),
 }
 
 /// Result type for kvs

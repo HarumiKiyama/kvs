@@ -5,7 +5,7 @@ use super::ThreadPool;
 pub struct NaiveThreadPool;
 
 impl ThreadPool for NaiveThreadPool {
-    fn new(threads: u32) -> Result<Self>
+    fn new(_threads: u32) -> Result<Self>
         where
             Self: Sized,
     {
@@ -14,7 +14,7 @@ impl ThreadPool for NaiveThreadPool {
     fn spawn<F>(&self, job: F)
         where
             F: FnOnce() + Send + 'static,
-{
+    {
         thread::spawn(job);
     }
 }

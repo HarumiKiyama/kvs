@@ -7,6 +7,7 @@ use std::{
     io::{BufReader, BufWriter},
     net::{SocketAddr, TcpListener},
 };
+use std::panic::UnwindSafe;
 
 use clap::{Parser, ValueEnum};
 use env_logger;
@@ -95,38 +96,40 @@ fn main() -> Result<()> {
     }
 }
 
-fn run_with_engine(engine: impl KvsEngine, addr: SocketAddr) -> Result<()> {
+fn run_with_engine<E: KvsEngine + Send + UnwindSafe>(engine: E, addr: SocketAddr) -> Result<()>
+{
     let listener = TcpListener::bind(addr)?;
     let pool = NaiveThreadPool::new(1000)?;
     for stream_res in listener.incoming() {
-        pool.spawn(|| {
-            let stream = stream_res?;
+        let engine = engine.clone();
+        pool.spawn(move || {
+            let stream = stream_res.unwrap();
             let reader = BufReader::new(&stream);
             let mut writer = BufWriter::new(&stream);
             let operations = Deserializer::from_reader(reader).into_iter::<Request>();
             for op in operations {
-                let op = op?;
+                let op = op.unwrap();
                 match op {
                     Request::Set { key, value } => {
                         let value = match engine.set(key, value) {
                             Ok(..) => "ok".to_string(),
-                            Err(e) => format!("{}", e),
+                            Err(e) => format!("{:?}", e),
                         };
-                        serde_json::to_writer(&mut writer, &Response::Set { value })?;
+                        serde_json::to_writer(&mut writer, &Response::Set { value }).unwrap();
                     }
                     Request::Get { key } => {
-                        let value = match engine.get(key)? {
+                        let value = match engine.get(key).unwrap() {
                             Some(value) => value,
                             None => "Key not found".to_string(),
                         };
-                        serde_json::to_writer(&stream, &Response::Get { value })?;
+                        serde_json::to_writer(&stream, &Response::Get { value }).unwrap();
                     }
                     Request::Rm { key } => {
                         let value = match engine.remove(key) {
                             Ok(..) => "ok".to_string(),
-                            Err(e) => format!("{}", e),
+                            Err(e) => format!("{:?}", e),
                         };
-                        serde_json::to_writer(&stream, &Response::Rm { value })?;
+                        serde_json::to_writer(&stream, &Response::Rm { value }).unwrap();
                     }
                 }
             }
