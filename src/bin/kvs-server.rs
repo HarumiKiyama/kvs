@@ -7,7 +7,6 @@ use std::{
     io::{BufReader, BufWriter},
     net::{SocketAddr, TcpListener},
 };
-use std::panic::UnwindSafe;
 
 use clap::{Parser, ValueEnum};
 use env_logger;
@@ -96,8 +95,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn run_with_engine<E: KvsEngine + Send + UnwindSafe>(engine: E, addr: SocketAddr) -> Result<()>
-{
+fn run_with_engine<E: KvsEngine + Send>(engine: E, addr: SocketAddr) -> Result<()> {
     let listener = TcpListener::bind(addr)?;
     let pool = NaiveThreadPool::new(1000)?;
     for stream_res in listener.incoming() {

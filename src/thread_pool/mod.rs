@@ -1,18 +1,14 @@
-use std::panic::UnwindSafe;
 use crate::Result;
 
-enum ThreadPoolMessage {
-    RunJob(Box<dyn FnOnce() + Send + 'static>),
-    Shutdown,
-}
+type Job = Box<dyn FnOnce() + Send + 'static>;
 
 pub trait ThreadPool {
     fn new(threads: u32) -> Result<Self>
-        where
-            Self: Sized;
+    where
+        Self: Sized;
     fn spawn<F>(&self, job: F)
-        where
-            F: FnOnce() + Send + 'static;
+    where
+        F: FnOnce() + Send + 'static;
 }
 
 mod naive_thread_pool;

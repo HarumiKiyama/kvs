@@ -1,46 +1,48 @@
-use std::panic::{catch_unwind, UnwindSafe};
-use std::thread::spawn;
+use std::ops::Drop;
+use std::thread::{self, spawn, Thread};
 
 use crossbeam::channel::{bounded, Sender};
 
+use crate::thread_pool::Job;
 use crate::Result;
-use crate::thread_pool::ThreadPoolMessage;
 
 use super::ThreadPool;
 
 pub struct SharedQueueThreadPool {
-    threads: u32,
-    sender: Sender<ThreadPoolMessage>,
+    sender: Sender<Job>,
 }
 
 impl ThreadPool for SharedQueueThreadPool {
     fn new(threads: u32) -> Result<Self>
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         let (sender, r) = bounded(0);
         for _ in 0..threads {
             let receiver = r.clone();
             spawn(move || {
-                for msg in receiver.iter() {
-                    match msg {
-                        ThreadPoolMessage::RunJob(job) => {
-                            match catch_unwind(job) {
-                                Ok(..) => {}
-                                Err(e) => { println!("{:?}", e) }
-                            }
-                        }
-                        ThreadPoolMessage::Shutdown => {}
-                    }
+                for job in receiver.iter() {
+                    job();
                 }
             });
         }
-        Ok(Self { threads, sender })
+        Ok(Self { sender })
     }
     fn spawn<F>(&self, job: F)
-        where
-            F: FnOnce() + Send + UnwindSafe + 'static,
+    where
+        F: FnOnce() + Send + 'static,
     {
-        self.sender.send(ThreadPoolMessage::RunJob(Box::new(job))).unwrap();
+        match self.sender.send(Box::new(job)) {
+            Ok(v) => {}
+            Err(e) => {}
+        };
+    }
+}
+
+impl Drop for SharedQueueThreadPool {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            let rx = self.clone()
+        }
     }
 }
