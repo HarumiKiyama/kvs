@@ -1,7 +1,7 @@
 use std::ops::Drop;
-use std::thread::{self, spawn, Thread};
+use std::thread::{self, spawn};
 
-use crossbeam::channel::{bounded, Sender};
+use crossbeam::channel::{bounded, Iter, Receiver, Sender};
 
 use crate::thread_pool::Job;
 use crate::Result;
@@ -12,14 +12,17 @@ pub struct SharedQueueThreadPool {
     sender: Sender<Job>,
 }
 
+#[derive(Clone)]
+struct ThreadReceiver(Receiver<Job>);
+
 impl ThreadPool for SharedQueueThreadPool {
     fn new(threads: u32) -> Result<Self>
     where
         Self: Sized,
     {
-        let (sender, r) = bounded(0);
+        let (sender, r) = bounded::<Job>(10);
         for _ in 0..threads {
-            let receiver = r.clone();
+            let receiver = ThreadReceiver(r.clone());
             spawn(move || {
                 for job in receiver.iter() {
                     job();
@@ -32,17 +35,25 @@ impl ThreadPool for SharedQueueThreadPool {
     where
         F: FnOnce() + Send + 'static,
     {
-        match self.sender.send(Box::new(job)) {
-            Ok(v) => {}
-            Err(e) => {}
-        };
+        self.sender.send(Box::new(job)).unwrap();
     }
 }
 
-impl Drop for SharedQueueThreadPool {
+impl ThreadReceiver {
+    fn iter(&self) -> Iter<Job> {
+        self.0.iter()
+    }
+}
+
+impl Drop for ThreadReceiver {
     fn drop(&mut self) {
         if thread::panicking() {
-            let rx = self.clone()
+            let receiver = self.clone();
+            spawn(move || {
+                for job in receiver.iter() {
+                    job();
+                }
+            });
         }
     }
 }
