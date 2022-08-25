@@ -111,7 +111,7 @@ fn run_with_engine<E: KvsEngine + Send>(engine: E, addr: SocketAddr) -> Result<(
                     Request::Set { key, value } => {
                         let value = match engine.set(key, value) {
                             Ok(..) => "ok".to_string(),
-                            Err(e) => format!("{:?}", e),
+                            Err(e) => e.to_string(),
                         };
                         serde_json::to_writer(&mut writer, &Response::Set { value }).unwrap();
                     }
@@ -125,7 +125,7 @@ fn run_with_engine<E: KvsEngine + Send>(engine: E, addr: SocketAddr) -> Result<(
                     Request::Rm { key } => {
                         let value = match engine.remove(key) {
                             Ok(..) => "ok".to_string(),
-                            Err(e) => format!("{:?}", e),
+                            Err(e) => e.to_string(),
                         };
                         serde_json::to_writer(&stream, &Response::Rm { value }).unwrap();
                     }
